@@ -115,7 +115,7 @@ let next_token input =
       let (ident_chars, rest') = read_ident [] input in
       let ident = list_to_string ident_chars in
       (Some (ident_to_token ident), rest')
-  | c :: rest ->
+  | c :: rest -> 
     failwith ("Unexpected character: " ^ String.make 1 c)
 
 
@@ -169,10 +169,10 @@ let print_tokens tokens =
 let () =
   print_endline "=== Test 1: Expression simple ===";
   print_tokens (lex "x := 42 + 3");
-
+  
   print_endline "\n=== Test 2: Boucle while ===";
   print_tokens (lex "while x > 0 do x := x - 1");
-
+  
   print_endline "\n=== Test 3: If-then-else ===";
   print_tokens (lex "if x = 0 then skip else x := 1")
 
@@ -195,6 +195,8 @@ type bexp =
   | BNeq of aexp * aexp
   | BLt of aexp * aexp
   | BLe of aexp * aexp
+  | BGt of aexp * aexp   
+  | BGe of aexp * aexp          
 
 type instr =
   | ISkip
@@ -347,29 +349,29 @@ let parse s =
   let tokens = lex s in
   let (ast, rest) = parse_instr tokens in
   if rest <> [] then
-    parse_error ("Unexpected tokens at end: " ^
+    parse_error ("Unexpected tokens at end: " ^ 
                  String.concat " " (List.map string_of_token rest))
   else
     ast
 
 let () =
   print_endline "\n=== Test parsing ===";
-
+  
   try
     let ast1 = parse "x := 42" in
     print_endline "Parse successful: x := 42";
-
+    
     let ast2 = parse "while x > 0 do x := x - 1" in
     print_endline "Parse successful: while x > 0 do x := x - 1";
-
+    
     let ast3 = parse "if x = 0 then skip else x := 1" in
     print_endline "Parse successful: if x = 0 then skip else x := 1";
-
+    
     let ast4 = parse "x := 0; y := 1; while not (x = 10) do (x := x + 1; y := y * 2)" in
     print_endline "Parse successful: complex program";
   with
   | Parse_error msg -> print_endline ("Parse error: " ^ msg)
-(*==============================================================================*)
+(*==============================================================================*)                         
 (*3.3 Liste paresseuses*)
 
 (* Type pour les listes paresseuses *)
@@ -419,7 +421,7 @@ let rec lazy_concat lll =
 let terminal t : ('a, 'a) parser = fun input ->
   match input with
   | LNil -> LNil
-  | LCons (x, rest) when x = t ->
+  | LCons (x, rest) when x = t -> 
       LCons ((x, Lazy.force rest), lazy LNil)
   | _ -> LNil
 
@@ -443,4 +445,350 @@ let (-->) (p1 : ('a, 'c) parser) (p2 : ('b, 'c) parser) : ('a * 'b, 'c) parser =
 (* (++>) : choix entre parseurs (ou) *)
 let (++>) (p1 : ('a, 'b) parser) (p2 : ('a, 'b) parser) : ('a, 'b) parser =
   fun input ->
-    lazy_append (p1 input) (p2 input)
+  lazy_append (p1 input) (p2 input)
+
+(*============================================================================*)
+(*3.4 Mécanique d’état et interpréteur*)
+
+
+(* Module signature pour l'état *)
+module type STATE = sig
+  type t
+  val init : unit -> t
+  val get : t -> string -> int
+  val set : t -> string -> int -> t
+  val copy : t -> t
+  val to_string : t -> string
+end
+
+(* Implémentation avec association list (immutable) *)
+module StateAssoc : STATE = struct
+  type t = (string * int) list
+  
+  let init () = []
+  
+  let rec get state var =
+    match List.assoc_opt var state with
+    | Some v -> v
+    | None -> 0  (* Variables non initialisées valent 0 *)
+  
+  let set state var value =
+    (* Créer un nouvel état avec la valeur mise à jour *)
+    let rec update acc = function
+      | [] -> List.rev ((var, value) :: acc)
+      | (v, n) :: rest when v = var -> 
+          List.rev_append acc ((var, value) :: rest)
+      | x :: rest -> update (x :: acc) rest
+    in
+    update [] state
+  
+  let copy state = state  (* Immutable, donc copie = identité *)
+  
+  let to_string state =
+    let bindings = List.map (fun (v, n) -> v ^ "=" ^ string_of_int n) state in
+    "[" ^ String.concat "; " bindings ^ "]"
+end
+
+(* Implémentation avec Map (immutable, plus efficace) *)
+module StateMap : STATE = struct
+  module SMap = Map.Make(String)
+  
+  type t = int SMap.t
+  
+  let init () = SMap.empty
+  
+  let get state var =
+    try SMap.find var state
+    with Not_found -> 0
+  
+  let set state var value =
+    SMap.add var value state
+  
+  let copy state = state
+  
+  let to_string state =
+    let bindings = SMap.bindings state in
+    let strs = List.map (fun (v, n) -> v ^ "=" ^ string_of_int n) bindings in
+    "[" ^ String.concat "; " strs ^ "]"
+end
+
+(* Implémentation avec Hashtbl (mutable - DANGER!) *)
+module StateMutable : STATE = struct
+  type t = (string, int) Hashtbl.t
+  
+  let init () = Hashtbl.create 10
+  
+  let get state var =
+    try Hashtbl.find state var
+    with Not_found -> 0
+  
+  let set state var value =
+    Hashtbl.replace state var value;
+    state  (* Retourne l'état modifié *)
+  
+  let copy state =
+    Hashtbl.copy state
+  
+  let to_string state =
+    let bindings = Hashtbl.fold (fun k v acc -> (k, v) :: acc) state [] in
+    let strs = List.map (fun (v, n) -> v ^ "=" ^ string_of_int n) bindings in
+    "[" ^ String.concat "; " strs ^ "]"
+end
+
+(* Choisir l'implémentation *)
+module State = StateMap
+
+(* Évaluation des expressions arithmétiques *)
+let rec eval_aexp (state : State.t) = function
+  | AInt n -> n
+  | AVar x -> State.get state x
+  | APlus (e1, e2) -> eval_aexp state e1 + eval_aexp state e2
+  | AMinus (e1, e2) -> eval_aexp state e1 - eval_aexp state e2
+  | AMult (e1, e2) -> eval_aexp state e1 * eval_aexp state e2
+  | ADiv (e1, e2) -> 
+      let v2 = eval_aexp state e2 in
+      if v2 = 0 then failwith "Division by zero"
+      else eval_aexp state e1 / v2
+
+(* Évaluation des expressions booléennes *)
+let rec eval_bexp (state : State.t) = function
+  | BTrue -> true
+  | BFalse -> false
+  | BNot b -> not (eval_bexp state b)
+  | BAnd (b1, b2) -> eval_bexp state b1 && eval_bexp state b2
+  | BOr (b1, b2) -> eval_bexp state b1 || eval_bexp state b2
+  | BEq (e1, e2) -> eval_aexp state e1 = eval_aexp state e2
+  | BNeq (e1, e2) -> eval_aexp state e1 <> eval_aexp state e2
+  | BLt (e1, e2) -> eval_aexp state e1 < eval_aexp state e2
+  | BLe (e1, e2) -> eval_aexp state e1 <= eval_aexp state e2
+  | BGt (e1, e2) -> eval_aexp state e1 > eval_aexp state e2
+  | BGe (e1, e2) -> eval_aexp state e1 >= eval_aexp state e2
+
+(* Exécuter une affectation *)
+let exec_assign state var expr =
+  let value = eval_aexp state expr in
+  State.set state var value
+
+
+(* Type configuration *)
+type config =
+  | Inter of instr * State.t
+  | Final of State.t
+
+(* Faire un pas de transition selon les règles SOS *)
+let rec faire_un_pas = function
+  | Final s -> Final s  (* Configuration finale, rien à faire *)
+  | Inter (prog, state) ->
+      match prog with
+      | ISkip -> 
+          Final state
+      
+      | IAssign (x, e) ->
+          let new_state = exec_assign state x e in
+          Final new_state
+      
+      | ISeq (i1, i2) ->
+          (match faire_un_pas (Inter (i1, state)) with
+           | Final s1 -> Inter (i2, s1)
+           | Inter (i1', s1) -> Inter (ISeq (i1', i2), s1))
+      
+      | IIf (b, i1, i2) ->
+          if eval_bexp state b then
+            Inter (i1, state)
+          else
+            Inter (i2, state)
+      
+      | IWhile (b, i) ->
+          Inter (IIf (b, ISeq (i, IWhile (b, i)), ISkip), state)
+
+(* Vérifier si une configuration est finale *)
+let is_final = function
+  | Final _ -> true
+  | Inter _ -> false
+
+(* Exécuter un programme jusqu'à la fin *)
+let rec executer prog =
+  let rec aux config =
+    match config with
+    | Final s -> s
+    | Inter _ -> aux (faire_un_pas config)
+  in
+  aux (Inter (prog, State.init ()))
+
+(* Version avec limite de pas (pour éviter boucles infinies) *)
+let executer_limite prog max_steps =
+  let rec aux config steps =
+    if steps >= max_steps then
+      failwith "Maximum number of steps reached (possible infinite loop)"
+    else
+      match config with
+      | Final s -> s
+      | Inter _ -> aux (faire_un_pas config) (steps + 1)
+  in
+  aux (Inter (prog, State.init ())) 0
+
+(*===============================================================================*)
+    
+(*3.5 Interpréteur amélioré*)
+    (* Exécuter avec compteur de pas *)
+let executer_compte prog =
+  let rec aux config steps =
+    match config with
+    | Final s -> (s, steps)
+    | Inter _ -> aux (faire_un_pas config) (steps + 1)
+  in
+  let (final_state, nb_steps) = aux (Inter (prog, State.init ())) 0 in
+  Printf.printf "Programme exécuté en %d pas\n" nb_steps;
+  final_state
+
+(* Version avec affichage de chaque pas *)
+let executer_verbose prog =
+  let rec aux config steps =
+    Printf.printf "\n=== Pas %d ===\n" steps;
+    (match config with
+     | Final s -> 
+         Printf.printf "Configuration finale: %s\n" (State.to_string s);
+         (s, steps)
+     | Inter (i, s) ->
+         Printf.printf "État: %s\n" (State.to_string s);
+         aux (faire_un_pas config) (steps + 1))
+  in
+  let (final_state, nb_steps) = aux (Inter (prog, State.init ())) 0 in
+  Printf.printf "\nTotal: %d pas\n" nb_steps;
+  final_state
+
+(* Afficher une instruction de manière lisible *)
+let rec string_of_instr = function
+  | ISkip -> "skip"
+  | IAssign (x, e) -> x ^ " := " ^ string_of_aexp e
+  | ISeq (i1, i2) -> string_of_instr i1 ^ "; " ^ string_of_instr i2
+  | IIf (b, i1, i2) -> 
+      "if " ^ string_of_bexp b ^ " then " ^ 
+      string_of_instr i1 ^ " else " ^ string_of_instr i2
+  | IWhile (b, i) -> 
+      "while " ^ string_of_bexp b ^ " do " ^ string_of_instr i
+
+and string_of_aexp = function
+  | AInt n -> string_of_int n
+  | AVar x -> x
+  | APlus (e1, e2) -> "(" ^ string_of_aexp e1 ^ " + " ^ string_of_aexp e2 ^ ")"
+  | AMinus (e1, e2) -> "(" ^ string_of_aexp e1 ^ " - " ^ string_of_aexp e2 ^ ")"
+  | AMult (e1, e2) -> "(" ^ string_of_aexp e1 ^ " * " ^ string_of_aexp e2 ^ ")"
+  | ADiv (e1, e2) -> "(" ^ string_of_aexp e1 ^ " / " ^ string_of_aexp e2 ^ ")"
+
+and string_of_bexp = function
+  | BTrue -> "true"
+  | BFalse -> "false"
+  | BNot b -> "not " ^ string_of_bexp b
+  | BAnd (b1, b2) -> "(" ^ string_of_bexp b1 ^ " and " ^ string_of_bexp b2 ^ ")"
+  | BOr (b1, b2) -> "(" ^ string_of_bexp b1 ^ " or " ^ string_of_bexp b2 ^ ")"
+  | BEq (e1, e2) -> string_of_aexp e1 ^ " = " ^ string_of_aexp e2
+  | BNeq (e1, e2) -> string_of_aexp e1 ^ " <> " ^ string_of_aexp e2
+  | BLt (e1, e2) -> string_of_aexp e1 ^ " < " ^ string_of_aexp e2
+  | BLe (e1, e2) -> string_of_aexp e1 ^ " <= " ^ string_of_aexp e2
+  | BGt (e1, e2) -> string_of_aexp e1 ^ " > " ^ string_of_aexp e2
+  | BGe (e1, e2) -> string_of_aexp e1 ^ " >= " ^ string_of_aexp e2
+
+(* Mode interactif pas à pas *)
+let executer_interactif prog =
+  let rec aux config steps =
+    Printf.printf "\n========================================\n";
+    Printf.printf "Pas %d\n" steps;
+    Printf.printf "========================================\n";
+    
+    match config with
+    | Final s -> 
+        Printf.printf "CONFIGURATION FINALE\n";
+        Printf.printf "État final: %s\n" (State.to_string s);
+        s
+    
+    | Inter (i, s) ->
+        Printf.printf "Instruction à exécuter:\n  %s\n" (string_of_instr i);
+        Printf.printf "État courant: %s\n" (State.to_string s);
+        Printf.printf "\nOptions:\n";
+        Printf.printf "  [Entrée] - Exécuter un pas\n";
+        Printf.printf "  c - Continuer jusqu'à la fin\n";
+        Printf.printf "  n N - Exécuter N pas\n";
+        Printf.printf "  q - Quitter\n";
+        Printf.printf "Votre choix: ";
+        flush stdout;
+        
+        let input = read_line () in
+        match String.trim input with
+        | "" -> 
+            (* Un pas *)
+            aux (faire_un_pas config) (steps + 1)
+        
+        | "c" -> 
+            (* Continuer jusqu'à la fin *)
+            let rec run_to_end cfg st =
+              match cfg with
+              | Final s -> s
+              | Inter _ -> run_to_end (faire_un_pas cfg) (st + 1)
+            in
+            run_to_end config steps
+        
+        | "q" -> 
+            Printf.printf "Exécution interrompue.\n";
+            s
+        
+        | cmd when String.length cmd > 2 && String.sub cmd 0 2 = "n " ->
+            let n = int_of_string (String.sub cmd 2 (String.length cmd - 2)) in
+            let rec run_n cfg st count =
+              if count = 0 then aux cfg st
+              else
+                match cfg with
+                | Final s -> s
+                | Inter _ -> run_n (faire_un_pas cfg) (st + 1) (count - 1)
+            in
+            run_n config steps n
+        
+        | _ ->
+            Printf.printf "Commande non reconnue.\n";
+            aux config steps
+  in
+  aux (Inter (prog, State.init ())) 0
+
+(*Tests*)
+(* Programme exemple: calcul de factorielle *)
+let prog_fact =
+  ISeq (
+    IAssign ("n", AInt 5),
+    ISeq (
+      IAssign ("result", AInt 1),
+      IWhile (
+        BGt (AVar "n", AInt 0),
+        ISeq (
+          IAssign ("result", AMult (AVar "result", AVar "n")),
+          IAssign ("n", AMinus (AVar "n", AInt 1))
+        )
+      )
+    )
+  )
+
+(* Programme qui boucle *)
+let prog_boucle_infinie =
+  IWhile (BTrue, IAssign ("x", APlus (AVar "x", AInt 1)))
+
+let () =
+  print_endline "=== Test 1: Exécution normale ===";
+  let s1 = executer prog_fact in
+  Printf.printf "Résultat: %s\n" (State.to_string s1);
+  
+  print_endline "\n=== Test 2: Exécution avec compteur ===";
+  let s2 = executer_compte prog_fact in
+  Printf.printf "Résultat: %s\n" (State.to_string s2);
+  
+  print_endline "\n=== Test 3: Exécution avec limite ===";
+  (try
+    let s3 = executer_limite prog_boucle_infinie 100 in
+    Printf.printf "Résultat: %s\n" (State.to_string s3)
+  with Failure msg -> Printf.printf "Erreur: %s\n" msg);
+  
+  print_endline "\n=== Test 4: Mode interactif ===";
+  Printf.printf "Tapez 'c' pour passer ce test\n";
+  let _ = executer_interactif prog_fact in
+  ()
+
+
+(*==================================================================================*)
