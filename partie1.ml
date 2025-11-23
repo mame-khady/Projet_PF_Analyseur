@@ -33,14 +33,14 @@ let whileb'' =
 (*Exercice 1.1.2*)
 
 (*Grammaire
-  Program := Stmt | Stmt ';' Program
+  Program ::= Stmt | Stmt ';' Program
   Stmt := Assign | If | While | Skip
-  Assign := Var ':=' Expr
-  If := 'i' '(' Var ')' '{' Program '}' '{' Program '}'
-  While := 'w' '(' Var ')' '{' Program '}'
-  Skip := epsilon
-  Expr := '0' | '1' | Var
-  Var := 'a' | 'b' | 'c' | 'd'
+  Assign ::= Var ':=' Expr
+  If ::= 'i' '(' Var ')' '{' Program '}' '{' Program '}'
+  While ::= 'w' '(' Var ')' '{' Program '}'
+  Skip ::= epsilon
+  Expr ::= '0' | '1' | Var
+  Var ::= 'a' | 'b' | 'c' | 'd'
  *)
 
 (*Exercice 1.1.3*)
@@ -50,17 +50,40 @@ let whileb'' =
   Grammaire sans recurssion :
   Program ::= Stmt Program_SE
   Program_SE ::= ';'  Stmt Program_SE | epsilon
-  Stmt := Assign | If | While | Skip
-  Assign := Var ':=' Expr
-  If := 'i' '(' Var ')' '{' Program '}' '{' Program '}'
-  While := 'w' '(' Var ')' '{' Program '}'
-  Skip := epsilon
-  Expr := '0' | '1' | Var
-  Var := 'a' | 'b' | 'c' | 'd'
+  Stmt ::= Assign | If | While | Skip
+  Assign ::= Var ':=' Expr
+  If ::= 'i' '(' Var ')' '{' Program '}' '{' Program '}'
+  While ::= 'w' '(' Var ')' '{' Program '}'
+  Skip ::= epsilon
+  Expr ::= '0' | '1' | Var
+  Var ::= 'a' | 'b' | 'c' | 'd'
   
  *)
 
+(*Exercice 1.1.4*)
+(*
+  grammaire non recursive :
+  C ::= '0' | '1'
+  V ::= 'a' | 'b' | 'c' | 'd'
+  A ::= C | V
+  E ::= T SE 
+  SE ::=  '+' T SE | epilon
+  T ::= F ST
+  ST ::=  '.' F ST | epsilon
+  F::= '!' F | A | '(' E ')'
+ *)
 
+(*exercice 1.2.1*)
+
+(*
+  Pour un programme de la forme if expr then P else Q , on a deux régles selon que l'évaluation de expr dans l'état s1 donne false ou true.
+
+                          P                                                        Q
+  [[expr]]s1 = true  s1 ====> s2                       [[expr]]s1 = false   s1 =======> s2
+  ------------------------------------               ----------------------------------------------------
+          if expr then P else Q                                  if expr then P else Q
+     s1==========================>s2                       s1============================>s2
+*)
 
 
 
