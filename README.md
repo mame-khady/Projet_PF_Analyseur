@@ -36,7 +36,7 @@ Utilitaire indispensable pour les analyseurs des parties suivantes
 
 + Partie2_1_4.ml : Analyseur amélioré avec gestion des espaces
 
-+ Partie2_1_final.ml : ....
++ Partie2_1_final.ml : Analyseur complet (WHILEb avec Priorités & Espaces)
 
 
 + Partie2_2.ml : Interpréteur WHILEb basé sur la sémantique naturelle (SN)
