@@ -1,8 +1,5 @@
 (**********************  TD n°6  ***************************)
 (* Ce TD porte sur la sémantique naturelle codée en Coq    *)
-(* du petit langage impératif WHILE déjà vu précédemment.  *)
-(* On va l'utiliser pour faire des dérivations, montrer    *)
-(* des propriétés, étudier des extensions.                 *)
 (***********************************************************)
 
 (* On importe les bibliothèques de Coq utiles pour le TD   *)
