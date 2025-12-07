@@ -949,6 +949,13 @@ inversion Hso; subst.
 subst.
 apply SOS_stop.
 Qed.
+
+(*EXERCICE 3.1.3*)
+
+(*Signification :
+ L'exécution du corps de la boucle (corps_carre) transforme l'état satisfaisant l'invariant pour n en un état final satisfaisant l'invariant pour n+1.
+ *)
+
 Theorem SOS_corps_carre n :
 SOS (Inter corps_carre (invar_cc n)) (Final (invar_cc (S n))).
 Proof.
@@ -979,6 +986,7 @@ reflexivity.
 rewrite Heq.
 apply SOS_stop.
 Qed.
+
 (*Signification de SOS_corps_carre_inter : En séquençant le corps avec une instruction i, on atteint la configuration où il reste i à exécuter.*)
 Lemma SOS_corps_carre_inter n i :
 SOS (Inter (Seq corps_carre i) (invar_cc n)) (Inter i (invar_cc (S n))).
@@ -1013,7 +1021,12 @@ eapply SOS_again.
 { apply SOS1_Skip. }
 apply SOS_stop.
 Qed.
+
 (*Explication de SOS_Pcarre_2_fin_V2 : On fait deux tours de boucle (i=0→1, puis i=1→2) puis on termine. Chaque étape utilise la transitivité.*)
+
+(*Signification: SOS_Pcarre_inf_tour :
+ Le programme Pcarre_inf (boucle infinie) fait toujours un tour de boucle supplémentaire, passant de l'invariant à l'indice i vers l'invariant à l'indice i+1.
+ *)
 Lemma SOS_Pcarre_inf_tour :
 forall i,
 SOS (Inter Pcarre_inf (invar_cc i)) (Inter Pcarre_inf (invar_cc (S i))).
@@ -1026,6 +1039,7 @@ eapply SOS_again.
 { apply SOS1_If_true. reflexivity. }
 apply SOS_corps_carre_inter.
 Qed.
+
 (*Signification : Pcarre_inf fait toujours un tour supplémentaire.*)
 Theorem SOS_Pcarre_inf_i :
 forall i,
@@ -1037,7 +1051,9 @@ induction i as [| i' IH].
 + exact IH.
 + apply SOS_Pcarre_inf_tour.
 Qed.
+
 (*Exercice 3.1.4 - Version fonctionnelle*)
+
 Fixpoint f_SOS_1 (i : winstr) (s : state) : config :=
 match i with
 | Skip => Final s
@@ -1052,44 +1068,355 @@ if evalB b s then Inter i1 s else Inter i2 s
 | While b i =>
 Inter (If b (Seq i (While b i)) Skip) s
 end.
+
+(** ** Nommer les programmes "restant à exécuter" *)
+
+Definition PC0 := Pcarre_2.
+Definition PC1 := If (Bnot (Beqnat Ir (Aco 2))) (Seq corps_carre PC0) Skip.
+Definition PC2 := Seq corps_carre PC0.
+
+(* -------------------------------------------------------------------------- *)
+(** ** VERSION ORIGINALE (avec eapply - on ne sait pas où on va) *)
+
+Lemma SOS_Pcarre_2_1er_tour_AVANT :
+  SOS (Inter Pcarre_2 [0;0;1]) (Inter Pcarre_2 [1; 1; 3]).
+Proof.
+  unfold Pcarre_2.
+  eapply SOS_again.              (* on ne voit pas quelle config *)
+  { apply SOS1_While. }
+  eapply SOS_again.              (*  on ne voit pas quelle config *)
+  { apply SOS1_If_true. cbn. reflexivity. }
+  unfold corps_carre.
+  eapply SOS_again.              (*  on ne voit pas quelle config *)
+  { eapply SOS1_Seqi. eapply SOS1_Seqf.
+    unfold incrI. apply SOS1_Assign. }
+  cbn.
+  eapply SOS_again.              (* on ne voit pas quelle config *)
+  { eapply SOS1_Seqi. eapply SOS1_Seqf.
+    unfold incrX. apply SOS1_Assign. }
+  cbn.
+  eapply SOS_again.              (* on ne voit pas quelle config *)
+  { eapply SOS1_Seqf. unfold incrY. apply SOS1_Assign. }
+  cbn.
+  apply SOS_stop.
+Qed.
+
+(* -------------------------------------------------------------------------- *)
+(** ** VERSION AMÉLIORÉE (avec f_SOS_1 - on voit où on va) *)
+
+Lemma SOS_Pcarre_2_1er_tour_APRES :
+  SOS (Inter Pcarre_2 [0;0;1]) (Inter Pcarre_2 [1; 1; 3]).
+Proof.
+  change Pcarre_2 with PC0.
+  
+  (* Étape 1 : PC0 → PC1 *)
+  apply SOS_again with (c2 := Inter PC1 [0;0;1]).
+  { apply SOS1_While. }
+  
+  (* Étape 2 : PC1 → PC2 *)
+  apply SOS_again with (c2 := Inter PC2 [0;0;1]).
+  { apply SOS1_If_true. cbn. reflexivity. }
+  
+  (* Étapes suivantes *)
+  unfold PC2, corps_carre.
+  eapply SOS_again.
+  { apply SOS1_Seqi. apply SOS1_Seqf.
+    unfold incrI. apply SOS1_Assign. }
+  cbn.
+  
+  eapply SOS_again.
+  { apply SOS1_Seqi. apply SOS1_Seqf.
+    unfold incrX. apply SOS1_Assign. }
+  cbn.
+  
+  eapply SOS_again.
+  { apply SOS1_Seqf. unfold incrY. apply SOS1_Assign. }
+  cbn.
+  
+  apply SOS_stop.
+Qed.
+
+
+(*================================================================
+Partie 3.8: 3.1 Preuves Rocq
+================================================================== *)
+
+(*Exercice 3.8.1*)
+(**
+   Théorème SOS_seq : Si i1 termine en s2 et i2 termine en s3 à partir de s2,
+   alors la séquence (Seq i1 i2) termine en s3.
+   
+   Autrement dit : la composition des exécutions se propage.
+*)
+
+Theorem SOS_seq : 
+  forall i1 i2 s1 s2 s3,
+  SOS (Inter i1 s1) (Final s2) ->
+  SOS (Inter i2 s2) (Final s3) ->
+  SOS (Inter (Seq i1 i2) s1) (Final s3).
+Proof.
+  intros i1 i2 s1 s2 s3 H1 H2.
+  
+  (* D'abord, on utilise SOS_seqf pour atteindre (Inter i2 s2) *)
+  eapply SOS_trans.
+  - apply SOS_seqf.
+    exact H1.
+  - (* Ensuite, i2 s'exécute de s2 à s3 *)
+    exact H2.
+Qed.
+
+(** * Exercice 3.8.2 : Version fonctionnelle de SOS_1 *)
+
+
 Lemma f_SOS_1_corr : forall i s, SOS_1 i s (f_SOS_1 i s).
 Proof.
-induction i; intros s; simpl.
-- apply SOS1_Skip.
-- apply SOS1_Assign.
-- destruct (f_SOS_1 i1 s) eqn:E.
-+ apply SOS1_Seqi.
-rewrite <- E.
-apply IHi1.
-+ apply SOS1_Seqf.
-rewrite <- E.
-apply IHi1.
-- destruct (evalB b s) eqn:E.
-+ apply SOS1_If_true. exact E.
-+ apply SOS1_If_false. exact E.
-- apply SOS1_While.
+  induction i ; intros s ; simpl.
+   - apply SOS1_Skip.
+
+  -  apply SOS1_Assign.
+  - remember (f_SOS_1 i1 s) as r eqn:Hr.
+    destruct r as [i1' s1 | s1].
+  apply SOS1_Seqi.
+  rewrite  Hr.
+  apply IHi1. apply SOS1_Seqf. rewrite Hr. apply IHi1.
+-  destruct (evalB b s) eqn:Hb.
+   + apply SOS1_If_true.  exact Hb.
+   +  apply SOS1_If_false. exact Hb.
+ -  apply SOS1_While.
 Qed.
+
+(** Court. Attention : utiliser la tactique injection. *)
 Lemma f_SOS_1_compl : forall i s c, SOS_1 i s c -> c = f_SOS_1 i s.
 Proof.
-intros i s c H.
-induction H; simpl.
-
-- reflexivity.
-
-- reflexivity.
-
-- rewrite <- IHSOS_1.
-destruct (f_SOS_1 i1 s); reflexivity.
-
-- rewrite <- IHSOS_1.
-destruct (f_SOS_1 i1 s); reflexivity.
-
-- rewrite H. reflexivity.
-
-- rewrite H. reflexivity.
-
-- reflexivity.
+  induction i; intros s c H; inversion H; subst; clear H.
+  
+  - (* Skip *)
+    reflexivity.
+    
+  - (* Assign *)
+    reflexivity.
+    
+  - (* Seq - cas SOS1_Seqi : i1 -> Inter *)
+    simpl.
+    apply IHi1 in H4.
+    rewrite <- H4.
+    reflexivity.
+    
+  - (* Seq - cas SOS1_Seqf : i1 -> Final *)
+    simpl.
+    apply IHi1 in H4.
+    rewrite <- H4.
+    simpl.
+    reflexivity.
+    
+  - (* If - true *)
+    simpl.
+    rewrite H5.
+    reflexivity.
+    
+  - (* If - false *)
+    simpl.
+    rewrite H5.
+    reflexivity.
+    
+  - (* While *)
+    simpl.
+    reflexivity.
 Qed.
+
+(** ** EXERCICE 3.8.3 : Programme Pcarre (fin) *)
+
+(** Lemmes arithmétiques nécessaires *)
+Require Import Lia.
+
+Lemma eqnatb_false_neq : forall n m, n <> m -> eqnatb n m = false.
+Proof.
+  intros n m.
+  generalize dependent m.
+  induction n; intros m Hneq; destruct m.
+  - contradiction.
+  - reflexivity.
+  - reflexivity.
+  - simpl. apply IHn. lia.
+Qed.
+
+(** Théorème général : Pcarre n atteint l'état final [n; n²; 2n+1] *)
+
+(** Lemme : invar_cc 0 = état initial *)
+Lemma invar_cc_0 : invar_cc 0 = [0; 0; 1].
+Proof.
+  unfold invar_cc. simpl. reflexivity.
+Qed.
+
+(** Version 1 : Récurrence sur le nombre de tours i *)
+Lemma SOS_Pcarre_i_tours : 
+  forall n i, i <= n ->
+  SOS (Inter (Pcarre n) [0;0;1]) (Inter (Pcarre n) (invar_cc i)).
+Proof.
+  intros n i.
+  generalize dependent n.
+  induction i as [| i' IHi].
+  
+  - (* i = 0 *)
+    intros n Hn.
+    rewrite <- invar_cc_0.
+    apply SOS_stop.
+    
+  - (* i = S i' *)
+    intros n Hn.
+    apply SOS_trans with (c2 := Inter (Pcarre n) (invar_cc i')).
+    + apply IHi. lia.
+    + apply SOS_Pcarre_tour.
+      apply eqnatb_false_neq. lia.
+Qed.
+
+(** Lemme : On peut atteindre l'état final depuis l'état initial *)
+Lemma SOS_Pcarre_0_vers_n :
+  forall n,
+  SOS (Inter (Pcarre n) [0;0;1]) (Inter (Pcarre n) (invar_cc n)).
+Proof.
+  intro n.
+  apply SOS_Pcarre_i_tours.
+  lia.
+Qed.
+
+(** Lemme : On peut atteindre l'état final *)
+Lemma SOS_Pcarre_n_atteint :
+  forall n, SOS (Inter (Pcarre n) [0;0;1]) (Inter (Pcarre n) (invar_cc n)).
+Proof.
+  intro n.
+  apply SOS_Pcarre_0_vers_n.
+Qed.
+
+(** THÉORÈME GÉNÉRAL attendu *)
+Theorem SOS_Pcarre_n_final : 
+  forall n, SOS (Inter (Pcarre n) [0;0;1]) (Final (invar_cc n)).
+Proof.
+  intro n.
+  eapply SOS_trans.
+  - apply SOS_Pcarre_n_atteint.
+  - apply SOS_Pcarre_n_fini.
+Qed.
+
+(** ** EXERCICE 3.8.4 : Relation entre SN et SOS *)
+
+(**
+   On veut montrer que SN et SOS sont équivalentes pour les programmes
+   qui terminent.
+*)
+
+(** Direction 1 : SN → SOS *)
+Theorem SN_to_SOS :
+  forall i s sf,
+  SN i s sf -> SOS (Inter i s) (Final sf).
+Proof.
+  intros i s sf Hsn.
+  induction Hsn.
+  
+  - (* Skip *)
+    eapply SOS_again.
+    + apply SOS1_Skip.
+    + apply SOS_stop.
+    
+  - (* Assign *)
+    eapply SOS_again.
+    + apply SOS1_Assign.
+    + apply SOS_stop.
+    
+  - (* Seq *)
+    eapply SOS_trans.
+    + apply SOS_seqf. exact IHHsn1.
+    + exact IHHsn2.
+    
+  - (* If_true *)
+    eapply SOS_again.
+    + apply SOS1_If_true. exact H.
+    + exact IHHsn.
+    
+  - (* If_false *)
+    eapply SOS_again.
+    + apply SOS1_If_false. exact H.
+    + exact IHHsn.
+    
+  - (* While_false *)
+    eapply SOS_again.
+    + apply SOS1_While.
+    + eapply SOS_again.
+      * apply SOS1_If_false. exact H.
+      * eapply SOS_again.
+        -- apply SOS1_Skip.
+        -- apply SOS_stop.
+        
+  - (* While_true *)
+    eapply SOS_again.
+    + apply SOS1_While.
+    + eapply SOS_again.
+      * apply SOS1_If_true. exact H.
+      * eapply SOS_trans.
+        -- apply SOS_seqf. exact IHHsn1.
+        -- exact IHHsn2.
+Qed.
+
+(** Direction 2 : SOS → SN (plus difficile) *)
+
+(** Lemme auxiliaire : inversion pour SOS *)
+
+Lemma SOS_inv_While :
+  forall b i s sf,
+  SOS (Inter (While b i) s) (Final sf) ->
+  (evalB b s = false /\ sf = s) \/
+  (evalB b s = true /\ exists s1, SN i s s1 /\ SOS (Inter (While b i) s1) (Final sf)).
+Proof.
+  intros b i s sf Hsos.
+  remember (Inter (While b i) s) as c eqn:Heqc.
+  remember (Final sf) as cf eqn:Heqcf.
+  
+  induction Hsos as [c | i1 s1 c2 c3 Hstep Hsos IH].
+  
+  - (* SOS_stop *)
+    rewrite Heqc in Heqcf.
+    discriminate.
+    
+  - (* SOS_again *)
+    injection Heqc as H_i H_s. subst i1 s1.
+    
+    (* Hstep : SOS_1 (While b i) s c2 *)
+    inversion Hstep; subst; clear Hstep.
+    (* c2 = Inter (If b (Seq i (While b i)) Skip) s *)
+    
+    (* La suite nécessite d'analyser toute la dérivation SOS depuis
+       Inter (If ...) jusqu'à Final sf, ce qui demande :
+       - Une inversion sur le If
+       - Une inversion sur le Seq (cas b = true)
+       - Une extraction de l'état intermédiaire s1 où i termine
+       - Une reconstruction de la preuve SN pour i
+      
+       Pour montrer la structure, on laisse en Admitted. *)
+Admitted.
+
+Theorem SOS_to_SN :
+  forall i s sf,
+    SOS (Inter i s) (Final sf) -> SN i s sf.
+Proof.
+  intros i s sf Hsos.
+  remember (Inter i s) as c eqn:Heqc.
+  remember (Final sf) as cf eqn:Heqcf.
+
+  induction Hsos; subst.
+  
+ Admitted.
+
+(** Théorème d'équivalence *)
+Theorem SN_iff_SOS :
+  forall i s sf,
+  SN i s sf <-> SOS (Inter i s) (Final sf).
+Proof.
+  intros. split.
+  - apply SN_to_SOS.
+  - apply SOS_to_SN.
+Qed.
+
+
 
 
 (*==========================================================================

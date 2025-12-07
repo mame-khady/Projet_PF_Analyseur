@@ -17,11 +17,21 @@ type prog =
 
 (* 2. ANALYSEURS LEXICAUX ÉLÉMENTAIRES *)
 
-(* Transforme string en liste de char *)
-let list_of_string s = 
-  let n = String.length s in
-  let rec boucle i = if i = n then [] else s.[i] :: boucle (i+1) in 
-  boucle 0
+(*
+  Grammaire sans recurssion :
+  
+  Program ::= Stmt Program_SE
+  Program_SE ::= ';'  Stmt Program_SE | epsilon
+  Stmt ::= Assign | If | While | Skip
+  Assign ::= Var ':=' Expr
+  If ::= 'i' '(' Var ')' '{' Program '}' '{' Program '}'
+  While ::= 'w' '(' Var ')' '{' Program '}'
+  Skip ::= epsilon
+  Expr ::= '0' | '1' | Var
+  Var ::= 'a' | 'b' | 'c' | 'd'
+  
+ *)
+
 
 (* Parseur de variable : a, b, c, d *)
 let parse_var = terminal_res (function
@@ -81,40 +91,100 @@ and parse_prog l =
 ;;
 
 (* TESTS (Exercice 2.1.2) *)
-let test_parser () =
-  Printf.printf "\n--- Tests Analyseur WHILEb-- ---\n";
 
-  (* Test 1 : Affectation simple *)
-  let p1 = parse "a:=1" in
-  Printf.printf "Test 1 (a:=1) : %s\n" 
-    (match p1 with Assign(A, Const 1) -> "OK" | _ -> "FAIL");
 
-  (* Test 2 : Séquence *)
-  let p2 = parse "a:=1;b:=0" in
-  Printf.printf "Test 2 (Seq)  : %s\n" 
-    (match p2 with Seq(Assign _, Assign _) -> "OK" | _ -> "FAIL");
 
-  (* Test 3 : Programme Vide (Skip implicite) *)
-  let p3 = parse "" in
-  Printf.printf "Test 3 (Vide) : %s\n" 
-    (match p3 with Skip -> "OK" | _ -> "FAIL");
+(* TESTS DU PARSEUR *)
 
-  (* Test 4 : Le programme complet de l'exercice 1.1 *)
-  (* a:=1;b:=1;c:=1;w(a){i(c){c:=0;a:=b}{b:=0;c:=a}} *)
-  let code_complexe = "a:=1;b:=1;c:=1;w(a){i(c){c:=0;a:=b}{b:=0;c:=a}}" in
-  let p4 = parse code_complexe in
-  Printf.printf "Test 4 (Complex): Structure generee !\n";
-  
-  (* Affichage basique pour vérifier p4 *)
-  let rec print_ast = function
-    | Skip -> Printf.printf "Skip"
-    | Assign _ -> Printf.printf "Assign"
-    | Seq(p1, p2) -> Printf.printf "Seq("; print_ast p1; Printf.printf ","; print_ast p2; Printf.printf ")"
-    | If _ -> Printf.printf "If"
-    | While _ -> Printf.printf "While"
-  in
-  print_ast p4; Printf.printf "\n"
-;;
+(* 1. Tests des variables *)
+assert (parse_var (list_of_string "a") = (A, []));
+assert (parse_var (list_of_string "b") = (B, []));
+assert (parse_var (list_of_string "dXYZ") = (D, ['X';'Y';'Z']));
 
-(* Lancer les tests *)
-test_parser ();;
+(* 2. Tests des expressions *)
+assert (parse_expr (list_of_string "0") = (Const 0, []));
+assert (parse_expr (list_of_string "1") = (Const 1, []));
+assert (parse_expr (list_of_string "a") = (Var A, []));
+assert (parse_expr (list_of_string "d") = (Var D, []));
+
+(* 3. Assignations *)
+assert (
+  parse_stmt (list_of_string "a:=0")
+  = (Assign (A, Const 0), [])
+);
+
+assert (
+  parse_stmt (list_of_string "b:=1")
+  = (Assign (B, Const 1), [])
+);
+
+assert (
+  parse_stmt (list_of_string "c:=a")
+  = (Assign (C, Var A), [])
+);
+
+(* 4. If simple *)
+assert (
+  parse_stmt (list_of_string "i(a){b:=0}{c:=1}")
+  = (If (A, Assign(B,Const 0), Assign(C,Const 1)), [])
+);
+
+(* 5. While simple *)
+assert (
+  parse_stmt (list_of_string "w(a){b:=1}")
+  = (While (A, Assign(B,Const 1)), [])
+);
+
+(* 6. Séquences *)
+assert (
+  parse_prog (list_of_string "a:=0;b:=1")
+  = (Seq(Assign(A,Const 0), Assign(B,Const 1)), [])
+);
+
+assert (
+  parse_prog (list_of_string "a:=0;b:=1;c:=1")
+  =
+ (Seq (Assign (A, Const 0), Seq (Assign (B, Const 1), Assign (C, Const 1))),
+ [])
+);
+
+(* 7. If avec programme composé *)
+
+assert (
+  parse_prog (list_of_string "i(a){a:=0;b:=1}{c:=1}")
+  =
+  (If (A, Seq (Assign (A, Const 0), Assign (B, Const 1)), Assign (C, Const 1)),
+ [])
+);
+
+(* 8. While avec programme composé *)
+assert (
+  parse_prog (list_of_string "w(a){a:=0;b:=1}")
+  =
+  (While(
+     A,
+     Seq(Assign(A,Const 0), Assign(B,Const 1))
+   ), [])
+);
+
+(* 9. Programme complexe *)
+assert (
+  parse_prog (list_of_string "a:=0;b:=1;i(a){b:=0}{c:=1}")
+  =
+ (Seq (Assign (A, Const 0),
+  Seq (Assign (B, Const 1), If (A, Assign (B, Const 0), Assign (C, Const 1)))),
+ [])
+);
+
+(* 10. Programme encore plus gros *)
+
+assert (
+  parse_prog (list_of_string "a:=0;w(a){b:=1;c:=0};i(b){a:=1}{d:=0}")
+  =
+ (Seq (Assign (A, Const 0),
+  Seq (While (A, Seq (Assign (B, Const 1), Assign (C, Const 0))),
+   If (B, Assign (A, Const 1), Assign (D, Const 0)))),
+ [])
+);
+
+print_endline "Tous les tests du parseur sont VALIDÉS !";;

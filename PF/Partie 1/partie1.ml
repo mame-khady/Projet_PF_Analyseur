@@ -33,7 +33,7 @@ let whileb'' =
 (*Exercice 1.1.2*)
 
 (*Grammaire
-  Program ::= Stmt | Stmt ';' Program
+  Program ::= Program ';' Stmt   | Stmt
   Stmt := Assign | If | While | Skip
   Assign ::= Var ':=' Expr
   If ::= 'i' '(' Var ')' '{' Program '}' '{' Program '}'

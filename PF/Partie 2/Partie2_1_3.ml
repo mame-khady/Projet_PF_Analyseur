@@ -5,6 +5,20 @@
 #use "anacomb.ml";;
 
 (* 1. TYPES ETENDUS (Exercice 1.1.4) *)
+
+(* 
+
+  C ::= '0' | '1'                       (* Constante : Const *)
+  V ::= 'a' | 'b' | 'c' | 'd'           (* Variable : Var *)
+  A ::= C | V                            (* Atom : parse_atom *)
+  F ::= '!' F | A | '(' E ')'            (* Factor : parse_factor *)
+  T ::= F ST                              (* Term : parse_term *)
+  ST ::= '.' F ST | epsilon               (* Conjonction : And *)
+  E ::= T SE                              (* Expr : parse_expr *)
+  SE ::= '+' T SE | epsilon               (* Disjonction : Or *)
+ *)
+
+
 type var = A | B | C | D
 (* Ajout de Not, And, Or selon la grammaire *)
 type expr = 
@@ -112,41 +126,20 @@ and parse_prog l =
 
 (* 5. TESTS ET VALIDATION *)
 
-let parse s = 
-  try 
-    let (res, reste) = parse_prog (list_of_string s) in
-    if reste = [] then res else raise Echec
-  with Echec -> Skip 
+(* Test 1 : Priorité '.' > '+' *)
+let r1 = parse_expr (list_of_string "1+0.0") in
+assert (r1 = (Or(Const 1, And(Const 0, Const 0)), []));
 
-(* Fonction helper pour tester juste les expressions *)
-let parse_e s = 
-  try 
-    let (res, _) = parse_expr (list_of_string s) in res 
-  with Echec -> Const (-1)
+(* Test 2 : Priorité '!' > '.' *)
+let r2 = parse_expr (list_of_string "!1.0") in
+assert (r2 = (And(Not(Const 1), Const 0), []));
 
-let () = 
-  Printf.printf "\n--- Validation Ex 2.1.3 (Expressions & Priorites) ---\n";
+(* Test 3 : Parenthèses *)
+let r3 = parse_expr (list_of_string "!(1+0)") in
+assert (r3 = (Not(Or(Const 1, Const 0)), []));
 
-  (* Test 1 : Priorité '.' > '+' *)
-  (match parse_e "1+0.0" with
-  | Or(Const 1, And(Const 0, Const 0)) -> Printf.printf "[OK] Priorite '.' > '+' respectee.\n"
-  | And(Or(Const 1, Const 0), Const 0) -> Printf.printf "[ECHEC] Priorite inversee (And au sommet) !\n"
-  | _ -> Printf.printf "[ECHEC] Structure inattendue.\n"); (* <--- POINT-VIRGULE ICI *)
+(* Test 4 : Intégration dans If *)
+let r4 = parse_prog (list_of_string "i(!a+b){skip}{skip}") in
+assert (r4 = (If(Or(Not(Var A), Var B), Skip, Skip), []));
 
-  (* Test 2 : Priorité '!' > '.' *)
-  (match parse_e "!1.0" with
-  | And(Not(Const 1), Const 0) -> Printf.printf "[OK] Priorite '!' > '.' respectee.\n"
-  | Not(And(Const 1, Const 0)) -> Printf.printf "[ECHEC] ! a pris trop large.\n"
-  | _ -> Printf.printf "[ECHEC] Erreur parsing !.\n"); (* <--- POINT-VIRGULE ICI *)
-
-  (* Test 3 : Parenthèses *)
-  (match parse_e "!(1+0)" with
-  | Not(Or(Const 1, Const 0)) -> Printf.printf "[OK] Parentheses respectees.\n"
-  | _ -> Printf.printf "[ECHEC] Parentheses ignorees.\n"); (* <--- POINT-VIRGULE ICI *)
-
-  (* Test 4 : Intégration dans WHILE *)
-  let p = parse "i(!a+b){skip}{skip}" in
-  match p with
-  | If(Or(Not(Var A), Var B), Skip, Skip) -> Printf.printf "[OK] Expressions complexes dans If.\n"
-  | _ -> Printf.printf "[ECHEC] Integration If.\n"
-;;
+print_endline "Tous les tests des expressions complexes et priorités sont VALIDÉS !";;
