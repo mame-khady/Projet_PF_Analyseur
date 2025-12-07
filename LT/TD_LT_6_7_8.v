@@ -204,28 +204,6 @@ Compute (evalB B1 S2).
 Compute (evalB B2 S1).
 Compute (evalB B2 S2).
 
-(** Corrigé du travail effectué en TD5 *)
-
-Fail Fixpoint evalW (i : winstr) (s : state) {struct i} : state :=
-match i with
-| Skip       => s
-| Assign x e => update s x (evalA e s)
-| Seq i1 i2  => let s1 := evalW i1 s in evalW i2 s1
-(*   (evalW i2 (evalW i1 s) *)
-| If e i1 i2 => match evalB e s with
-| true  => evalW i1 s
-| false => evalW i2 s
-end
-| (While e i1) as i => match evalB e s with
-| true  =>
-let s1 := evalW i1 s in evalW (While e i1) s1
-(*   let s1 := evalW i1 s in evalW i s1                *)
-| false => s
-end
-end.
-
-
-
 (** ** Version relationnelle, appelée "sémantique naturelle" *)
 
 (** Vu dans le CM précédent.
@@ -260,153 +238,6 @@ Definition Xr := Ava Xl.
 Definition corps_boucle := Seq (Assign Il (Amo Ir N1)) (Assign Xl (Apl N1 Xr)).
 Definition P1 := While (Bnot (Beqnat Ir N0)) corps_boucle.
 
-(** On montre que P1 transforme l'état S1 en l'état S2  *)
-
-Theorem reduction1 : SN P1 S1 S2.
-(** Regarder les états courants tout au long de la preuve *)
-Proof.
-  cbv [P1]. cbv [S1]. cbv [S2].
-  (** Ou de façon équivalente :
-  unfold P1. unfold S1. unfold S2. *)
-
-  (** Ce but devrait être prouvé par l'une des deux dernières règles de SN,
-qui portent sur le cas While.
-On peut deviner laquelle de tête, ou demander de l'aide ainsi : *)
-  Compute (evalB (Bnot (Beqnat Ir N0)) [1; 2]).
-  (** Ce sera donc avec SN_While_true.
-      On peut essayer d'avancer avec 'apply SN_While_true.'  ... mais ça échoue.
-Ici Coq ne peut pas deviner ce que sera l'état intermédiaire s1. *)
-  Fail apply SN_While_true.
-  (** Une stratégie possible serait d'indiquer directement l'état
-      intermédiaire avec la variante 'apply ... with (s1:= ...)'.
-      Il faut deviner les paramètres corrects ce qui n'est pas toujours facile.
-Dans notre cas cela serait : *)
-apply SN_While_true with (s1:=[0;3]).
-(** On va donc proposer une autre stratégie· *)
-Undo 1.
-(** Une première possibilité est avec refine, déjà connu :
-ici on indique un joker '_' pour chacun des HUIT arguments ;
-[b], [i], [s] et [s2] se trouvent déterminés par la forme du but,
-[s1] sera déterminé par la preuve de [SN s i s s1] et ne donne donc
-pas lieu à un sous-but. Il restera à prouver :
-[evalB b s = true], [SN i s s1] et [SN (While b i) s1 s2].  *)
-refine (SN_While_true _ _ _ _ _ _ _ _).
-(** On obtient le même effet avec la tactique [eapply], plus commode. *)
-Undo 1.
-eapply SN_While_true.
-- reflexivity.
-- cbv [corps_boucle].
-(** Un nouvel état intermédiaire est à deviner *)
-eapply SN_Seq.
-+ apply SN_Assign.
-(* En appliquant cette règle nous avons fixé la valeur de l'état d'arrivée *)
-+ (* L'état de départ vient du cas précédent ;
-         comme les états sont connus on peut simplifier. *)
-      cbn [evalA Ir Il N1 get minus update].
-      (** Ou, plus rapidement *)
-      Undo 1.
-      cbn.
-      apply SN_Assign.
-  - cbn.
-    (** SN_While_true ou SN_While_false ? *)
-    Compute (evalB (Bnot (Beqnat Ir N0)) [0; 3]).
-    apply SN_While_false.
-    cbn.
-    reflexivity.
-Qed.
-
-(** À FAIRE (NIVEAU 1) :
-    terminer la présentation de  reduction1 sous forme d'arbre ci-dessous *)
-Definition AFAIRE_dessin_reduction1 : unit.
-
-(*
-(update [0;2] x 3)
-(update [1;2] i 0)                      = [0; 3]
-= [0; 2]                                ----------- SN_Assign
------------ SN_Assign                   SN (x:=..)
-SN (i:=..)                              [0; 2]
-[1; 2]                                  [0; 3]
-[0; 2]
------------------------------------------------ SN_Seq      evalB "i<>0"
-SN corps [1; 2] [0; 3]                         [0; 3] = false
-------------------- SN_While_false
-SN P1 [0; 3] [0; 3]
-
-evalB "i<>0" [1; 2] = true           SN corps [1; 2] [0; 3]      SN P1 [0; 3] [0; 3]
-------------------------------------------------------------------------------------- SN_While_true
-SN P1 [1; 2] [0; 3]
-
-*)
-Admitted.
-
-(** Une autre présentation de ce script, structurée par accolades.
-Cela permet de gérer l'indentation autrement
-    (surtout utile quand le corps de boucle s'exécute plusieurs fois. *)
-Theorem reduction1_accolades : SN P1 S1 S2.
-Proof.
-cbv [P1]. cbv [S1]. cbv [S2].
-eapply SN_While_true.
-{ cbn. reflexivity. }
-{ cbv [corps_boucle].
-eapply SN_Seq.
-+ apply SN_Assign.
-+ cbn. apply SN_Assign. }
-cbn.
-Compute (evalB (Bnot (Beqnat Ir N0)) [0; 3]).
-apply SN_While_false.
-cbn. reflexivity.
-Qed.
-
-(** Exercice d'entraînement *)
-
-Theorem entrainement_P1 : SN P1 [2; 5] [0; 7].
-Proof.
-  (* 1. On "ouvre" le programme pour voir le While *)
-  cbv [P1].
-
-  (* ============================================================ *)
-  (* PREMIER TOUR DE BOUCLE : On part de [2; 5] *)
-  (* Condition : 2 <> 0 (Vrai) -> On entre *)
-  eapply SN_While_true.
-
-  (* 1.1 Preuve que la condition est Vraie *)
-  { cbn. reflexivity. }
-
-  (* 1.2 Exécution du corps : [2; 5] devient [1; 6] *)
-  {
-    cbv [corps_boucle].
-    eapply SN_Seq.
-    + apply SN_Assign.      (* i := 2 - 1 = 1 *)
-    + cbn. apply SN_Assign. (* x := 5 + 1 = 6 *)
-  }
-
-  (* ============================================================ *)
-  (* DEUXIÈME TOUR DE BOUCLE : On est maintenant en [1; 6] *)
-  (* Condition : 1 <> 0 (Vrai) -> On entre encore *)
-  cbn. (* (Facultatif) Juste pour voir l'état [1; 6] dans le but *)
-eapply SN_While_true.
-
-(* 2.1 Preuve que la condition est Vrai *)
-{ cbn. reflexivity. }
-
-(* 2.2 Exécution du corps : [1; 6] devient [0; 7] *)
-{
-cbv [corps_boucle].
-eapply SN_Seq.
-+ apply SN_Assign.      (* i := 1 - 1 = 0 *)
-+ cbn. apply SN_Assign. (* x := 6 + 1 = 7 *)
-}
-
-(* ============================================================ *)
-(* FIN DE BOUCLE : On est maintenant en [0; 7] *)
-(* Condition : 0 <> 0 (Faux) -> On sort *)
-cbn.
-apply SN_While_false.
-
-(* 3.1 Preuve que la condition est Fausse *)
-cbn. reflexivity.
-Qed.
-
 (** On veut montrer maintenant que P1 rend toujours un état où
 i vaut 0 et x voit sa valeur augmenter de la valeur initiale de i. *)
 
@@ -416,41 +247,6 @@ comprenant les constructeurs O pour zéro et S pour le successeur. *)
 Print nat.
 Require Import Arith. (* pour Nat.sub_0_r *)
 Check Nat.sub_0_r.
-
-(** Les lemmes suivants de la bibliothèque Coq peuvent être utiles
-- Lemma Nat.sub_0_r : forall n, n - 0 = n.
-- Lemma minus_n_O :   forall n, n = n - 0. (* obsolète depuis coq.8.16.0 *)
-- Lemma plus_n_Sm :   forall n m, S (n + m) = n + S m. *)
-
-Theorem reduction2 : forall x y, SN P1 [x;y] [0;x+y].
-Proof.
-cbv[P1 Ir Il N1 Xr Xl]; intros x.
-induction x as [ | x Hrec_x];
-intros; cbn [evalA];cbn [evalB].
-(* --- Cas de base : x = 0 --- *)
-- apply SN_While_false. (* La condition est fausse (0 != 0) *)
-reflexivity.
-
-(* --- Cas inductif : S x --- *)
-- eapply SN_While_true.
-+ reflexivity. (* La condition est vraie (S x != 0) *)
-
-(* Exécution du corps de la boucle *)
-+ eapply SN_Seq.
-* apply SN_Assign.      (* i passe de (S x) à x *)
-* cbn. apply SN_Assign. (* x passe de y à (S y) *)
-
-(* Suite de la boucle : utilisation de l'hypothèse de récurrence *)
-    + cbn.
-     (* 1. On arrange l'état d'arrivée (droite) : S(x+y) -> x + S y *)
-      rewrite plus_n_Sm.
-
-      (* 2. On arrange l'état de départ (gauche) : x - 0 -> x *)
-rewrite Nat.sub_0_r.
-
-(* [x; S y] -> [0; x + S y] *)
-apply Hrec_x.
-Qed.
 
 (** *** Calcul du carré avec des additions *)
 (** On code dans While un programme Pcarre correspondant à
@@ -517,17 +313,6 @@ cbn. (* Pour bien voir l'état intermédiaire *)
   cbn. reflexivity.
 Qed.
 
-(** Énoncer et démontrer que Pcarre n permet de calculer le carré de n *)
-(* Complétez ici NIVEAU 4
-   (pas de technique nouvelle, mais demande de la créativité *)
-
-(** Sur le même modèle, trouver un programme Pcube n'utilisant que des
-additions, énoncer et démontrer qu'il est correct. *)
-(* Complétez ici NIVEAU 6
-   (pas de technique nouvelle, mais demande de la créativité
-  Quelques lemmes utiles.
- *)
-
 Check Nat.add_comm.
 Check Nat.add_assoc.
 (*Check plus_assoc.*)
@@ -559,75 +344,6 @@ Fixpoint simpl_test_Btrue_Bfalse (i: winstr) : winstr :=
 (* Cas 4 : While -> on garde le While mais on simplifie son corps *)
 | While b i1 => While b (simpl_test_Btrue_Bfalse i1)
 end.
-
-(** Comme indiqué ci-dessus on va procéder par récurrence structurelle sur
-les arbres de preuve de [SN i s s'] *)
-Theorem simpl_test_Btrue_Bfalse_correct :
-  forall i s s', SN i s s' -> SN (simpl_test_Btrue_Bfalse i) s s'.
-Proof.
-(** On essaie d'abord une récurrence sur i.
-      Même avec prudence, de la façon la plus générale possible
-      (les états [s] et [s'], ainsi que l'hypothèse [SN i s s'] sont
-introduits APRÈS [induction i]), on verra que les buts ne sont
-pas comme souhaité *)
-intro i.
-induction i as [ | | | | ]; (** sans nommer les composantes pour alléger *)
-intros s s' sn (** les introductions sont effectuées systématiquement
-                         sur chaque sous-but *).
-  (** On observe que l'hypothèse [sn] devrait entraîner [s = s'],
-      mais on ne l'a pas obtenu directement ;
-tous les autres sous-buts souffrent de problèmes analogues. *)
-Undo 2.
-(** Il est bien plus opportun de raisonner par récurrence sur [sn] car
-on aura naturellement non seulement la décomposition de [i] mais en plus
-les contraintes dictées par la définition de SN *)
-intros i s s' sn.
-  induction sn as  [ (* SN_Skip *) s
-                   | (* SN_Assign *) x s a
-                   | (* SN_Seq *) i1 i2 s s1 s' sn1 hrec_sn1 sn2 hrec_sn2
-| (* SN_If_true *) cond i1 i2 s s' e sn hrec_sn
-                   | (* SN_If_false *) cond i1 i2 s s' e sn hrec_sn
-| (* SN_While_false *) (* complétez ici NIVEAU 1 *)
-| (* SN_While_true *) (* complétez ici NIVEAU 1 *)
-]; cbn [simpl_test_Btrue_Bfalse].
-
-(** La preuve qui suit est un peu fastidieuse, on verra plus tard
-des moyens de la fabriquer plus intelligemment. *)
-(** Certains buts contiendront en une hypothèse se convertissant en
-[false = true] (plus visible en utilisant [cbn in ...].
-On pourra se souvenir d'une technique vue auparavant (égalités contagieuses).
-  *)
-(** complétez ici
-     - nombreux sous-buts NIVEAU 2
-     - quelques sous-buts NIVEAU 3, utiliser admit si besoin *)
-Admitted.
-
-(* -------------------------------------------------------------------------- *)
-(** Une autre transformation simple (facultatif, pour l'entraînement)
--  if (Bnot b) then X else Y ---> if b then Y else X  *)
-
-Fixpoint simpl_test_echange (i: winstr) : winstr.
-(** complétez ici NIVEAU 1 *)
-Admitted.
-
-Lemma negb_negb : forall b, b = negb (negb b).
-Proof.
-(** complétez ici NIVEAU 1 *)
-Admitted.
-
-Lemma Bnot_negb : forall {B s b}, evalB (Bnot B) s = b -> evalB B s = negb b.
-Proof.
-(** complétez ici NIVEAU 1 *)
-Admitted.
-
-(** Suivre le même principe que pour simpl_test_Btrue_Bfalse_correct. *)
-Theorem simpl_test_echange_correct :
-forall i s s', SN i s s' -> SN (simpl_test_echange i) s s'.
-Proof.
-  (** complétez ici
-     - nombreux sous-buts NIVEAU 2
-     - quelques sous-buts NIVEAU 3, utiliser admit si besoin *)
-Admitted.
 
 (* -------------------------------------------------------------------------- *)
 (** ** Interlude sur l'inversion *)
@@ -900,11 +616,6 @@ Proof.
   { cbn. reflexivity. }                 (* Condition vraie (arrêt) *)
 Qed.
 
-(** À FAIRE : présenter P2_test sous forme d'arbre *)
-Definition AFAIRE_dessin_P2_test : unit.
-Admitted.
-
-
 (** *** Preuves sur SNr *)
 (** On va maintenant montrer que : 'Repeat i until b'
 peut être traduit  par       : 'i; while (not b) do i'     *)
@@ -1031,26 +742,12 @@ inversion IHsn2; subst.
 discriminate.
 Qed.
 
-(* -------------------------------------------------------------------------- *)
-(** ** Le langage WHILE-REPEAT *)
-(** Remarque : on pourrait également considérer un langage WHILE_REPEAT
-comprenant à la fois l'instruction While et l'instruction Repeat
-*)
-
-
-
-
-
 (*================================================================
 Partie 3.1: 3.1 Preuves sur la SOS
 ================================================================== *)
 
-
-
 Require Import Bool Arith List.
 Import List.ListNotations.
-
-
 
 Inductive config :=
 | Inter : winstr -> state -> config
