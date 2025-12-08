@@ -124,6 +124,8 @@ Partie 3.3 : Chaimae Bouti - mam Khady - Salma Kamal
 
 Partie 3.4 : Chaimae Bouti - mam Khady - Salma Kamal
 
+Partie 3.8 : Chaimae Bouti - mam Khady - Salma Kamal
+
 Partie 3.9 :Chaimae Bouti - mam Khady - Salma Kamal
 
 
